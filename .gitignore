@@ -1,0 +1,12 @@
+# 動画はリポジトリに含めない
+*.mp4
+*.mov
+*.MOV
+*.avi
+*.m4v
+*.mkv
+Video/
+
+*.tmp
+__pycache__/
+.DS_Store
