@@ -14,6 +14,9 @@
 
 使い方:
     python annotate.py --videos Video/文章 --out annotations --annotator yamada
+    python annotate.py --files Video/文章/3.mp4 Video/文章/7.mp4 --annotator yamada
+    python annotate.py --list videos.txt --annotator yamada     # 1行に1つ動画のパス
+    python annotate.py --pick --annotator yamada                # 選択画面で選ぶ
 
 キー操作（動画のウィンドウを選択した状態で押す）:
     space   再生 / 一時停止
@@ -370,26 +373,121 @@ def annotate_video(video_dir, video, out_dir, annotator, progress):
     return state.result
 
 
+# ---------------------------------------------------------------- 開く動画の指定
+
+def add_video_args(ap):
+    """開く動画を指定する引数（annotate.py と label_frames.py で共通）。"""
+    g = ap.add_argument_group('開く動画（いずれか1つ以上を指定）')
+    g.add_argument('--videos', help='動画のフォルダ（中の動画を番号順にすべて開く）')
+    g.add_argument('--files', nargs='+', metavar='動画', help='開く動画ファイル（指定した順に開く）')
+    g.add_argument('--list', metavar='テキスト', help='開く動画を1行に1つ書いたテキストファイル（# 以降はコメント）')
+    g.add_argument('--pick', action='store_true', help='ファイル選択の画面で動画を選ぶ（複数選択可）')
+    g.add_argument('--only', help='--videos のフォルダの中で、この名前の動画だけを開く')
+
+
+def read_video_list(path):
+    """リストファイルを読む。相対パスはリストファイルのある場所を基準にする。"""
+    base = os.path.dirname(os.path.abspath(path))
+    paths = []
+    with open(path, encoding='utf-8-sig') as f:
+        for line in f:
+            line = line.split('#', 1)[0].strip()
+            if line:
+                p = os.path.expanduser(line)
+                paths.append(p if os.path.isabs(p) else os.path.join(base, p))
+    return paths
+
+
+def pick_videos():
+    """ファイル選択の画面を開き、選ばれた動画のパスを返す。"""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        sys.exit('この Python では tkinter が使えないため --pick は使えません。--files か --list を使ってください。')
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    paths = filedialog.askopenfilenames(
+        title='アノテーションする動画を選択（複数選択可）',
+        filetypes=[('動画', ' '.join('*' + e for e in VIDEO_EXTS + tuple(e.upper() for e in VIDEO_EXTS))),
+                   ('すべて', '*')])
+    root.destroy()
+    return list(paths)
+
+
+def resolve_videos(args):
+    """引数から、開く動画の (フォルダ, ファイル名) のリストを作る。
+
+    返り値: (動画のリスト, 明示的に選んだか)
+      明示的に選んだ動画（--files / --list / --pick / --only）は、完了済みでも開く。
+    """
+    explicit = []
+    if args.files:
+        explicit += args.files
+    if args.list:
+        explicit += read_video_list(args.list)
+    if args.pick:
+        explicit += pick_videos()
+
+    items = []
+    if explicit:
+        for p in explicit:
+            p = os.path.abspath(os.path.expanduser(p))
+            if not os.path.isfile(p):
+                sys.exit(f'動画が見つかりません: {p}')
+            items.append((os.path.dirname(p), os.path.basename(p)))
+    elif args.videos:
+        names = list_videos(args.videos)
+        if args.only:
+            names = [v for v in names if v == args.only]
+            if not names:
+                sys.exit(f'{args.videos} に {args.only} がありません')
+        items = [(args.videos, v) for v in names]
+    else:
+        sys.exit('--videos, --files, --list, --pick のいずれかで動画を指定してください。')
+
+    # 保存ファイルは動画のファイル名で決まるので、別のフォルダの同じ名前の動画は区別できない
+    seen = {}
+    for d, v in items:
+        if v in seen and seen[v] != d:
+            sys.exit(f'同じ名前の動画が別のフォルダにあります: {v}（{seen[v]} と {d}）。'
+                     '名前を変えるか、--out を分けて別々に作業してください。')
+        seen[v] = d
+    unique = list(dict.fromkeys(items))  # 同じ動画を2回指定したら1回にする
+    return unique, bool(explicit or args.only)
+
+
+def select_todo(items, explicit, progress, redo):
+    """開く動画を決める。フォルダ指定では完了済みを飛ばし、明示的な指定では完了済みも開く。"""
+    todo = []
+    for d, v in items:
+        done = progress.get(v, {}).get('status') == 'done'
+        if done and not (redo or explicit):
+            continue
+        if done:
+            print(f'  {v} は完了済みですが、指定されたので開きます（修正すると未完了に戻ります）')
+        todo.append((d, v))
+    return todo
+
+
 def main():
     ap = argparse.ArgumentParser(description='指文字区間のアノテーションツール',
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument('--videos', required=True, help='動画のフォルダ')
+    add_video_args(ap)
     ap.add_argument('--out', default='annotations', help='CSV の保存先フォルダ')
     ap.add_argument('--annotator', required=True, help='アノテーションした人の名前（一致度の評価に使う）')
-    ap.add_argument('--redo', action='store_true', help='完了済みの動画も開く')
-    ap.add_argument('--only', help='この名前の動画だけを開く')
+    ap.add_argument('--redo', action='store_true', help='--videos のフォルダ指定でも完了済みの動画を開く')
     args = ap.parse_args()
 
+    items, explicit = resolve_videos(args)
     os.makedirs(args.out, exist_ok=True)
     progress = load_progress(args.out)
-    videos = list_videos(args.videos)
-    if args.only:
-        videos = [v for v in videos if v == args.only]
-    todo = [v for v in videos if args.redo or progress.get(v, {}).get('status') != 'done']
-    print(f'動画 {len(videos)} 本のうち、未完了 {len(todo)} 本を順に開きます。')
+    todo = select_todo(items, explicit, progress, args.redo)
+    print(f'動画 {len(items)} 本のうち、{len(todo)} 本を順に開きます。')
 
-    for video in todo:
-        result = annotate_video(args.videos, video, args.out, args.annotator, progress)
+    for video_dir, video in todo:
+        result = annotate_video(video_dir, video, args.out, args.annotator, progress)
         if result == 'quit':
             print('保存して終了しました。次回は続きから再開します。')
             break

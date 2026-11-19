@@ -11,6 +11,8 @@
 
 使い方:
     python label_frames.py --videos Video/文章 --out annotations_frames --annotator yamada
+    python label_frames.py --files Video/文章/3.mp4 --annotator yamada
+    （--list / --pick も使える。annotate.py の説明を参照）
 
 キー操作（動画のウィンドウを選択した状態で押す）:
     1       ブラシ「指文字」（現在のフレームから塗り始める）
@@ -42,7 +44,8 @@ import sys
 import cv2
 import numpy as np
 
-from annotate import SPEEDS, list_videos, load_frames, natural_key
+from annotate import (SPEEDS, add_video_args, list_videos, load_frames, natural_key, resolve_videos,
+                      select_todo)
 
 PROGRESS_FILE = '_progress.csv'
 PROGRESS_FIELDS = ['video', 'status', 'n_frames', 'n_fs', 'n_other', 'n_unlabeled', 'fps', 'annotator', 'updated']
@@ -304,19 +307,19 @@ def label_video(video_dir, video, out_dir, annotator, progress):
 def main():
     ap = argparse.ArgumentParser(description='1/2 キーによるフレーム単位のラベル付け',
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
-    ap.add_argument('--videos', required=True)
+    add_video_args(ap)
     ap.add_argument('--out', default='annotations_frames')
     ap.add_argument('--annotator', required=True)
-    ap.add_argument('--redo', action='store_true', help='完了済みの動画も開く')
+    ap.add_argument('--redo', action='store_true', help='--videos のフォルダ指定でも完了済みの動画を開く')
     args = ap.parse_args()
 
+    items, explicit = resolve_videos(args)
     os.makedirs(args.out, exist_ok=True)
     progress = load_progress(args.out)
-    videos = list_videos(args.videos)
-    todo = [v for v in videos if args.redo or progress.get(v, {}).get('status') != 'done']
-    print(f'動画 {len(videos)} 本のうち、未完了 {len(todo)} 本を順に開きます。')
-    for v in todo:
-        if label_video(args.videos, v, args.out, args.annotator, progress) == 'quit':
+    todo = select_todo(items, explicit, progress, args.redo)
+    print(f'動画 {len(items)} 本のうち、{len(todo)} 本を順に開きます。')
+    for video_dir, v in todo:
+        if label_video(video_dir, v, args.out, args.annotator, progress) == 'quit':
             print('保存して終了しました。次回は続きから再開します。')
             break
     else:

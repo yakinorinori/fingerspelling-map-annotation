@@ -14,6 +14,31 @@ python annotate.py --videos Video/文章 --out annotations --annotator yamada
 python validate.py --out annotations --export annotations_all.csv
 ```
 
+### 開く動画の指定
+
+`annotate.py` と `label_frames.py` のどちらでも、次の方法で開く動画を選べます。
+
+| 指定方法 | 例 | 開く順番 | 完了済みの動画 |
+|---|---|---|---|
+| フォルダ | `--videos Video/文章` | ファイル名の番号順 | 飛ばす（`--redo` で開く） |
+| ファイル | `--files Video/文章/3.mp4 Video/文章/7.mp4` | 指定した順 | 開く |
+| リスト | `--list videos.txt` | 書いた順 | 開く |
+| 選択画面 | `--pick` | 選んだ順 | 開く |
+| フォルダ内の1本 | `--videos Video/文章 --only 3.mp4` | ― | 開く |
+
+`--files`・`--list`・`--pick` は組み合わせられ、同じ動画を重ねて指定しても1回だけ開きます。
+リストのテキストファイルは1行に1つ動画のパスを書き、`#` 以降はコメントです。相対パスはリストファイルのある場所が基準です。
+
+```
+# 1回目の作業分
+Video/文章/3.mp4
+Video/文章/7.mp4
+/Users/x21095xx/Desktop/別の動画/sentence_12.mp4
+```
+
+保存ファイルは動画のファイル名で決まるため、別のフォルダに同じ名前の動画があるときは止まります。名前を変えるか、`--out` を分けてください。
+`--pick` は Python の tkinter を使います。使えない環境では `--files` か `--list` を使ってください。
+
 ### キー操作（動画のウィンドウを選択した状態で押す）
 
 | キー | 操作 |
