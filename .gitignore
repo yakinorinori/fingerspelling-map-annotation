@@ -10,3 +10,7 @@ Video/
 *.tmp
 __pycache__/
 .DS_Store
+
+# ub-MOJI は再配布禁止
+ub-moji/
+annotations_frames/*.tmp
