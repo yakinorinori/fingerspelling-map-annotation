@@ -1,4 +1,4 @@
-# fingerspelling-annotation
+# fingerspelling-map-annotation
 
 手話文章動画に含まれる指文字区間のアノテーションツールと、アノテーションの規則。
 
